@@ -3,7 +3,7 @@
  */
 
 // --- Configuration ---
-const GAS_API_URL = ''; // Update this!
+const GAS_API_URL = 'https://script.google.com/macros/s/AKfycbw3NONwmrA6EZeGshVTWYFXUy9692Z5617bgAGRKwuGtkQ_5kWIFcQuaEGFMKF0NlR_7g/exec'; // Update this!
 
 // --- Constants ---
 const DB_NAME = 'StockAppDB';
@@ -451,3 +451,4 @@ function setupServiceWorker() {
 }
 
 init();
+
