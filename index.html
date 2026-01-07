@@ -1,0 +1,138 @@
+<!DOCTYPE html>
+<html lang="ja">
+
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+  <title>在庫管理PWA Pro</title>
+  <link rel="stylesheet" href="style.css">
+  <link rel="manifest" href="manifest.json">
+  <meta name="theme-color" content="#4F46E5">
+  <link rel="apple-touch-icon" href="icon-192.png">
+  <script src="https://cdn.jsdelivr.net/npm/@ericblade/quagga2/dist/quagga.min.js"></script>
+</head>
+
+<body>
+
+  <header>
+    <h1>📦 Stock Pro</h1>
+    <!-- Sync Indicator & Button -->
+    <div class="header-actions">
+      <span id="sync-indicator" class="sync-indicator hidden">↻ 通信中...</span>
+      <button id="btn-sync" class="sync-btn">
+        🔄 同期
+      </button>
+    </div>
+  </header>
+
+  <main>
+    <!-- Scanner Section -->
+    <section class="card">
+      <div id="scanner-wrapper" class="hidden">
+        <div id="scanner-container" class="scanner-viewport"></div>
+        <p id="scanner-msg">カメラをバーコードに向けてください</p>
+      </div>
+      <button id="btn-scan-toggle" class="btn-scan">
+        📷 バーコード読取開始
+      </button>
+    </section>
+
+    <!-- Input Form -->
+    <section class="card form-card" id="input-form-card">
+      <!-- Mode Indicator Badge -->
+      <div id="mode-badge" class="mode-badge hidden">モード</div>
+
+      <div class="form-group">
+        <label>JANコード (13桁)</label>
+        <input type="tel" id="inp-jan" placeholder="読取 or 入力" maxlength="13">
+      </div>
+
+      <div class="form-group highlight-target-new">
+        <label>商品名</label>
+        <input type="text" id="inp-name" placeholder="商品名を入力">
+      </div>
+
+      <div class="form-group highlight-target-new">
+        <label>メーカーコード (数字のみ)</label>
+        <input type="tel" id="inp-maker" placeholder="数字のみ入力" inputmode="numeric">
+      </div>
+
+      <!-- Multi-Location Stock Inputs -->
+      <div class="stock-section highlight-target-update">
+        <label
+          style="font-size:1rem; border-bottom:1px solid #eee; padding-bottom:0.5rem; margin-bottom:1rem; display:flex; justify-content:space-between;">
+          在庫数
+          <span id="total-stock-display" style="color:var(--primary-color);">合計: 0</span>
+        </label>
+
+        <!-- Shelf -->
+        <div class="stock-row">
+          <label>棚上</label>
+          <div class="stock-control">
+            <button class="btn-circle btn-minus" data-target="inp-shelf">−</button>
+            <input type="number" id="inp-shelf" value="0" min="0" class="inp-stock-sub">
+            <button class="btn-circle btn-plus" data-target="inp-shelf">＋</button>
+          </div>
+        </div>
+
+        <!-- BackRoom -->
+        <div class="stock-row">
+          <label>脚注部屋</label>
+          <div class="stock-control">
+            <button class="btn-circle btn-minus" data-target="inp-backroom">−</button>
+            <input type="number" id="inp-backroom" value="0" min="0" class="inp-stock-sub">
+            <button class="btn-circle btn-plus" data-target="inp-backroom">＋</button>
+          </div>
+        </div>
+
+        <!-- Prefab -->
+        <div class="stock-row">
+          <label>プレハブ</label>
+          <div class="stock-control">
+            <button class="btn-circle btn-minus" data-target="inp-prefab">−</button>
+            <input type="number" id="inp-prefab" value="0" min="0" class="inp-stock-sub">
+            <button class="btn-circle btn-plus" data-target="inp-prefab">＋</button>
+          </div>
+        </div>
+      </div>
+
+      <button id="btn-save" class="btn-primary">追加 / 更新</button>
+      <button id="btn-clear" class="btn-text">フォームをクリア</button>
+    </section>
+
+    <!-- List View -->
+    <section>
+      <div class="filters">
+        <input type="search" id="inp-search" placeholder="JAN・商品名で検索...">
+        <select id="sel-sort">
+          <option value="date-desc">追加日時 (新しい順)</option>
+          <option value="stock-asc">合計在庫 (少ない順)</option> <!-- Useful for restock -->
+          <option value="stock-desc">合計在庫 (多い順)</option>
+          <option value="maker-asc">メーカー (昇順)</option>
+        </select>
+      </div>
+
+      <div class="list-controls">
+        <label class="checkbox-label">
+          <input type="checkbox" id="chk-hide-zero"> 在庫なし(0)を表示しない
+        </label>
+        <button id="btn-manual-pull" class="btn-sm btn-outline">
+          📥 最新データ取得
+        </button>
+      </div>
+
+      <div id="list-container"></div>
+
+      <div class="pagination">
+        <button id="btn-prev">前へ</button>
+        <span id="page-indicator">1 / 1</span>
+        <button id="btn-next">次へ</button>
+      </div>
+    </section>
+  </main>
+
+  <div id="toast" class="toast"></div>
+  <script src="app.js"></script>
+</body>
+
+</html>
