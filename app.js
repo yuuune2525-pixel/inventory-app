@@ -4,7 +4,7 @@
 
 // --- Configuration ---
 // ↓ ここにGASのデプロイURLを貼り付けてください
-const GAS_API_URL = '';
+const GAS_API_URL = 'https://script.google.com/macros/s/AKfycbzrVqPQPpS5XvKsMdsIT84b3Ff7hSzMlAXsGgQ34s_0Cw2OxEaGK8iMiQIHjUiOwN6S/exec';
 
 // --- Constants & State ---
 const DB_NAME = 'StockAppDB';
@@ -572,3 +572,4 @@ init();
 // Global handles for HTML access
 window.handleDelete = handleDelete;
 window.handleEdit = handleEdit;
+
