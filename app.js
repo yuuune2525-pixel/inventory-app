@@ -1,10 +1,9 @@
 /**
- * PWA Stock App Main Logic
+ * PWA Stock App Main Logic (Quagga2 + GAS Sync)
  */
 
 // --- Configuration ---
-// ↓ ここにGASのデプロイURLを貼り付けてください
-const GAS_API_URL = 'https://script.google.com/macros/s/AKfycbzrVqPQPpS5XvKsMdsIT84b3Ff7hSzMlAXsGgQ34s_0Cw2OxEaGK8iMiQIHjUiOwN6S/exec';
+const GAS_API_URL = 'https://script.google.com/macros/s/AKfycbxkDLmpPBodGZeVnXB8lsnIRIQ2W8SR89otF5oKbZ5ZqAzZfTnHZpXJDZTZo1LzsRYhRg/exec'; // ここにGASのWebアプリURLを貼り付けてください
 
 // --- Constants & State ---
 const DB_NAME = 'StockAppDB';
@@ -12,8 +11,6 @@ const DB_VERSION = 1;
 const STORE_NAME = 'products';
 
 let db = null;
-let codeReader = null;
-let currentStream = null;
 let isScanning = false;
 
 // State for pagination
@@ -35,7 +32,7 @@ const dom = {
 
   btnScanToggle: document.getElementById('btn-scan-toggle'),
   scannerWrapper: document.getElementById('scanner-wrapper'),
-  video: document.getElementById('video'),
+  scannerMsg: document.getElementById('scanner-msg'),
 
   btnMinus: document.getElementById('btn-minus'),
   btnPlus: document.getElementById('btn-plus'),
@@ -43,7 +40,7 @@ const dom = {
   btnClear: document.getElementById('btn-clear'),
 
   btnSync: document.getElementById('btn-sync'),
-  syncText: document.getElementById('sync-text'),
+  btnManualPull: document.getElementById('btn-manual-pull'),
 
   search: document.getElementById('inp-search'),
   sort: document.getElementById('sel-sort'),
@@ -61,41 +58,43 @@ async function init() {
   await initDB();
   setupEventListeners();
   setupServiceWorker();
+
+  // Load local data first
   await loadAndRender();
+
+  // Auto-Sync (Pull) on Start if URL is present
+  if (GAS_API_URL) {
+    console.log('Auto-sync starting...');
+    // We don't block the UI, just run in bg
+    pullFromGAS(true);
+  }
 }
 
 // --- IndexedDB ---
 function initDB() {
   return new Promise((resolve, reject) => {
     const request = indexedDB.open(DB_NAME, DB_VERSION);
-
     request.onupgradeneeded = (e) => {
       const db = e.target.result;
       if (!db.objectStoreNames.contains(STORE_NAME)) {
-        // JAN as key
         db.createObjectStore(STORE_NAME, { keyPath: 'jan' });
       }
     };
-
     request.onsuccess = (e) => {
       db = e.target.result;
       resolve(db);
     };
-
-    request.onerror = (e) => {
-      console.error('DB Error:', e);
-      reject(e);
-    };
+    request.onerror = (e) => reject(e);
   });
 }
 
 async function dbGetAll() {
-  return new Promise((resolve, reject) => {
+  return new Promise((resolve) => {
     const tx = db.transaction(STORE_NAME, 'readonly');
     const store = tx.objectStore(STORE_NAME);
-    const request = store.getAll();
-    request.onsuccess = () => resolve(request.result);
-    request.onerror = () => reject(request.error);
+    const req = store.getAll();
+    req.onsuccess = () => resolve(req.result);
+    req.onerror = () => resolve([]);
   });
 }
 
@@ -103,9 +102,9 @@ function dbPut(item) {
   return new Promise((resolve, reject) => {
     const tx = db.transaction(STORE_NAME, 'readwrite');
     const store = tx.objectStore(STORE_NAME);
-    const request = store.put(item); // Add or Update
-    request.onsuccess = () => resolve();
-    request.onerror = () => reject(request.error);
+    const req = store.put(item);
+    req.onsuccess = () => resolve();
+    req.onerror = () => reject(req.error);
   });
 }
 
@@ -113,19 +112,9 @@ function dbDelete(jan) {
   return new Promise((resolve, reject) => {
     const tx = db.transaction(STORE_NAME, 'readwrite');
     const store = tx.objectStore(STORE_NAME);
-    const request = store.delete(jan);
-    request.onsuccess = () => resolve();
-    request.onerror = () => reject(request.error);
-  });
-}
-
-function dbGet(jan) {
-  return new Promise((resolve, reject) => {
-    const tx = db.transaction(STORE_NAME, 'readonly');
-    const store = tx.objectStore(STORE_NAME);
-    const request = store.get(jan);
-    request.onsuccess = () => resolve(request.result);
-    request.onerror = () => reject(request.error);
+    const req = store.delete(jan);
+    req.onsuccess = () => resolve();
+    req.onerror = () => reject(req.error);
   });
 }
 
@@ -133,9 +122,19 @@ function dbClear() {
   return new Promise((resolve, reject) => {
     const tx = db.transaction(STORE_NAME, 'readwrite');
     const store = tx.objectStore(STORE_NAME);
-    const request = store.clear();
-    request.onsuccess = () => resolve();
-    request.onerror = () => reject(request.error);
+    const req = store.clear();
+    req.onsuccess = () => resolve();
+    req.onerror = () => reject(req.error);
+  });
+}
+
+function dbGet(jan) {
+  return new Promise((resolve) => {
+    const tx = db.transaction(STORE_NAME, 'readonly');
+    const store = tx.objectStore(STORE_NAME);
+    const req = store.get(jan);
+    req.onsuccess = () => resolve(req.result);
+    req.onerror = () => resolve(null);
   });
 }
 
@@ -148,35 +147,23 @@ function setupEventListeners() {
   dom.btnMinus.addEventListener('click', () => updateStockInput(-1));
   dom.btnPlus.addEventListener('click', () => updateStockInput(1));
 
-  // Input restriction
+  // Input validations
   dom.maker.addEventListener('input', (e) => {
-    // Digits only
     e.target.value = e.target.value.replace(/[^0-9]/g, '');
   });
   dom.stock.addEventListener('input', (e) => {
-    // Non-negative integer
     let val = parseInt(e.target.value, 10);
     if (isNaN(val) || val < 0) val = 0;
     e.target.value = val;
   });
 
-  // Save
+  // Save/Clear
   dom.btnSave.addEventListener('click', handleSave);
   dom.btnClear.addEventListener('click', clearForm);
 
-  // List Actions (Event Delegation)
-  dom.listContainer.addEventListener('click', (e) => {
-    const btn = e.target.closest('button');
-    if (!btn) return;
-
-    if (btn.classList.contains('btn-delete')) {
-      const jan = btn.dataset.jan;
-      if (jan) handleDelete(jan);
-    } else if (btn.classList.contains('btn-edit')) {
-      const jan = btn.dataset.jan;
-      if (jan) handleEdit(jan);
-    }
-  });
+  // Sync
+  dom.btnSync.addEventListener('click', handlePushSync); // Send to Sheet
+  dom.btnManualPull.addEventListener('click', () => pullFromGAS(false)); // Get from Sheet
 
   // List Filters
   dom.search.addEventListener('input', (e) => {
@@ -193,7 +180,7 @@ function setupEventListeners() {
   dom.btnPrev.addEventListener('click', () => {
     if (currentPage > 1) {
       currentPage--;
-      renderList(false); // Don't re-filter, just slice
+      renderList(false);
     }
   });
   dom.btnNext.addEventListener('click', () => {
@@ -204,17 +191,27 @@ function setupEventListeners() {
     }
   });
 
-  // Sync
-  dom.btnSync.addEventListener('click', handleSync);
+  // List Delegation (Edit/Delete)
+  dom.listContainer.addEventListener('click', (e) => {
+    const btn = e.target.closest('button');
+    if (!btn) return;
+    const jan = btn.dataset.jan;
 
-  // Auto-fill logic when JAN is typed/scanned
+    if (btn.classList.contains('btn-delete')) {
+      handleDelete(jan);
+    } else if (btn.classList.contains('btn-edit')) {
+      handleEdit(jan);
+    }
+  });
+
+  // Auto-fill
   dom.jan.addEventListener('change', async (e) => {
     const val = e.target.value;
     if (val.length === 13) {
       const existing = await dbGet(val);
       if (existing) {
         populateForm(existing);
-        showToast('既存の商品データを読み込みました');
+        showToast('データを読み込みました');
       }
     }
   });
@@ -233,7 +230,6 @@ function clearForm() {
   dom.name.value = '';
   dom.maker.value = '';
   dom.stock.value = '0';
-  dom.jan.disabled = false;
 }
 
 function populateForm(item) {
@@ -249,7 +245,6 @@ async function handleSave() {
   const makerCode = dom.maker.value.trim();
   const stock = parseInt(dom.stock.value, 10);
 
-  // Validation
   if (!jan || jan.length !== 13) {
     showToast('JANコードは13桁で入力してください');
     return;
@@ -274,37 +269,22 @@ async function handleSave() {
 }
 
 async function handleDelete(jan) {
-  if (confirm('本当に削除しますか？\n(JAN: ' + jan + ')')) {
-    try {
-      await dbDelete(jan);
-      showToast('削除しました');
-      // Fix: Ensure we reload properly, handle pagination if page becomes empty
-      allItems = await dbGetAll(); // Refresh source of truth
-
-      // logic to handle page count reduction
-      // We will rely on renderList to re-calc filtering but we need to ensure current page isn't out of bounds
-      // We'll reset to page 1 if safe, or keep calling renderList checks
-      if (filteredItems.length <= 1 && currentPage > 1) { // rough guess, better to let renderList handle
-        // actually re-calling loadAndRender does everything
-      }
-
-      renderList();
-    } catch (e) {
-      console.error(e);
-      showToast('削除に失敗しました: ' + e.message);
-    }
+  if (confirm(`本当に削除しますか？\n(JAN: ${jan})`)) {
+    await dbDelete(jan);
+    showToast('削除しました');
+    await loadAndRender();
   }
 }
 
-function handleEdit(jan) {
-  const item = allItems.find(i => i.jan === jan);
+async function handleEdit(jan) {
+  const item = await dbGet(jan);
   if (item) {
     populateForm(item);
     window.scrollTo({ top: dom.jan.offsetTop - 100, behavior: 'smooth' });
   }
 }
 
-// --- List & Rendering ---
+// --- List Logic ---
 async function loadAndRender() {
   allItems = await dbGetAll();
   renderList();
@@ -312,13 +292,9 @@ async function loadAndRender() {
 
 function renderList(reFilter = true) {
   if (reFilter) {
-    // 1. Search
     const q = searchQuery.toLowerCase();
-    filteredItems = allItems.filter(item => {
-      return (item.jan.includes(q) || item.name.toLowerCase().includes(q));
-    });
+    filteredItems = allItems.filter(i => i.jan.includes(q) || i.name.toLowerCase().includes(q));
 
-    // 2. Sort
     filteredItems.sort((a, b) => {
       switch (sortMode) {
         case 'date-desc': return new Date(b.updatedAt) - new Date(a.updatedAt);
@@ -332,26 +308,23 @@ function renderList(reFilter = true) {
     });
   }
 
-  // 3. Pagination
   const total = filteredItems.length;
   const maxPage = Math.ceil(total / ITEMS_PER_PAGE) || 1;
   if (currentPage > maxPage) currentPage = maxPage;
 
   const start = (currentPage - 1) * ITEMS_PER_PAGE;
-  const end = start + ITEMS_PER_PAGE;
-  const pageItems = filteredItems.slice(start, end);
+  const pageItems = filteredItems.slice(start, start + ITEMS_PER_PAGE);
 
-  // Render
   dom.listContainer.innerHTML = '';
   pageItems.forEach(item => {
-    const el = document.createElement('div');
-    el.className = 'item-card';
-    el.innerHTML = `
+    const div = document.createElement('div');
+    div.className = 'item-card';
+    div.innerHTML = `
       <div class="item-info">
         <h3>${escapeHtml(item.name)}</h3>
         <div class="item-meta">
           <span>JAN: ${item.jan}</span>
-          ${item.makerCode ? `<span>Maker: ${escapeHtml(item.makerCode)}</span>` : ''}
+          <span>${item.makerCode ? 'Maker: ' + escapeHtml(item.makerCode) : ''}</span>
           <span>📅 ${new Date(item.updatedAt).toLocaleDateString()}</span>
         </div>
       </div>
@@ -363,17 +336,16 @@ function renderList(reFilter = true) {
         <button class="btn-sm btn-delete" data-jan="${item.jan}">削除</button>
       </div>
     `;
-    dom.listContainer.appendChild(el);
+    dom.listContainer.appendChild(div);
   });
 
-  // Update Controls
   dom.pageIndicator.textContent = `${currentPage} / ${maxPage}`;
   dom.btnPrev.disabled = (currentPage === 1);
   dom.btnNext.disabled = (currentPage === maxPage);
 }
 
-// --- Barcode Scanner (ZXing) ---
-async function toggleScanner() {
+// --- Barcode (Quagga2) ---
+function toggleScanner() {
   if (isScanning) {
     stopScanner();
   } else {
@@ -381,100 +353,81 @@ async function toggleScanner() {
   }
 }
 
-async function startScanner() {
-  if (!codeReader) {
-    codeReader = new ZXing.BrowserMultiFormatReader();
-  }
+function startScanner() {
+  // Config for Quagga
+  dom.scannerWrapper.classList.remove('hidden');
+  dom.btnScanToggle.textContent = '⏹ 読取停止';
+  dom.btnScanToggle.style.backgroundColor = 'var(--danger-color)';
 
-  try {
-    dom.scannerWrapper.classList.remove('hidden');
-    dom.btnScanToggle.textContent = '⏹ 読取停止';
-    dom.btnScanToggle.style.backgroundColor = 'var(--danger-color)';
+  Quagga.init({
+    inputStream: {
+      name: "Live",
+      type: "LiveStream",
+      target: document.querySelector('#scanner-container'),
+      constraints: {
+        width: 480,
+        height: 320,
+        facingMode: "environment" // Rear Camera
+      }
+    },
+    decoder: {
+      readers: ["ean_reader"] // JAN = EAN-13
+    }
+  }, function (err) {
+    if (err) {
+      console.error(err);
+      showToast('カメラの起動に失敗しました: ' + err.name);
+      stopScanner();
+      return;
+    }
+    console.log("Quagga Init Success");
+    Quagga.start();
     isScanning = true;
 
-    // Use rear camera
-    const constraints = {
-      video: { facingMode: 'environment' }
-    };
+    // Ensure playsinline for iOS (Quagga usually handles it, but let's force check)
+    const videos = document.querySelectorAll('video');
+    videos.forEach(v => v.setAttribute('playsinline', 'true'));
+  });
 
-    codeReader.decodeFromVideoDevice(null, 'video', (result, err) => {
-      if (result) {
-        console.log("Found:", result.text);
-        if (result.text.length === 13) { // Basic JAN filter
-          // Success tone
-          playBeep();
+  Quagga.onDetected(onBarcodeDetected);
+}
 
-          dom.jan.value = result.text;
-          // Trigger change event to load data if exists
-          dom.jan.dispatchEvent(new Event('change'));
+function stopScanner() {
+  Quagga.stop();
+  Quagga.offDetected(onBarcodeDetected);
+  isScanning = false;
+  dom.scannerWrapper.classList.add('hidden');
+  dom.btnScanToggle.textContent = '📷 バーコード読取開始';
+  dom.btnScanToggle.style.backgroundColor = 'var(--text-main)';
+}
 
-          stopScanner();
-          showToast(`読み取り成功: ${result.text}`);
-        }
-      }
-      if (err && !(err instanceof ZXing.NotFoundException)) {
-        console.error(err);
-      }
-    });
+function onBarcodeDetected(result) {
+  const code = result.codeResult.code;
+  if (!code) return;
 
-  } catch (err) {
-    console.error(err);
-    showToast('カメラの起動に失敗しました');
+  // Basic debounce or check could go here
+  console.log("Detected:", code);
+
+  if (code.length === 13) {
+    playBeep();
+    dom.jan.value = code;
+    dom.jan.dispatchEvent(new Event('change')); // Trigger autofill
+    showToast(`読み取り: ${code}`);
     stopScanner();
   }
 }
 
-function stopScanner() {
-  if (codeReader) {
-    codeReader.reset();
-  }
-  dom.scannerWrapper.classList.add('hidden');
-  dom.btnScanToggle.textContent = '📷 バーコード読取開始';
-  dom.btnScanToggle.style.backgroundColor = 'var(--text-main)';
-  isScanning = false;
-}
-
-// --- Sync Logic (GAS) ---
-async function handleSync() {
+// --- Sync Logic ---
+// 1. Push: App -> Sheet
+async function handlePushSync() {
   if (!GAS_API_URL) {
-    showToast('GAS URLが設定されていません');
+    showToast('GAS URLが未設定です');
     return;
   }
-  const confirmMsg = "Googleスプレッドシートと同期しますか？\n(注意: ローカルのデータでシートを上書き、またはシートのデータを取り込みます)";
-  // Since user asked for Bi-directional, let's keep it simple:
-  // "Push Local to Sheet" or "Pull Sheet to Local" options? 
-  // Requirement: "双方向（追加・更新・削除）に同期したい"
-  // Best effort: Get Sheet Data, Merge with Local? Or simply Push Local?
-  // Let's implement a choice or a smart merge.
-  // For simplicity and user safety, I will implement "Push to Sheet" and "Pull from Sheet" separately is better, but maybe just one action.
-  // Let's try: 
-  // 1. Backup local.
-  // 2. Fetch Sheet Data. 
-  // 3. For now, since no complex conflict resolution, I'll assume "Local is Master" for editing, then syncs to Cloud.
-  // But wait, if user edits in Sheet, they want it reflected.
-  // Let's prompt user: "Download" or "Upload"?
-
-  // Actually, to fully satisfy "Sync", I'll do a simple "Push" because that's safer for "My App" usually.
-  // BUT the prompt asks for "Update/Delete" sync.
-  // Let's try to fetch, merge by time?
-  // No, let's offer a menu or just "Download (Overwrite Local)" and "Upload (Overwrite Sheet)".
-  // Users understand that better than "Magic Sync" that breaks things.
-  // However, I can't do a UI menu easily in a button click without a modal.
-  // I will just use `confirm`.
-
-  // Implementation: "Push all local data to Sheet" -> Sheet matches local exactly.
-  // This supports add/update/delete (since we validly overwrite the sheet).
-
-  if (!confirm('データを同期します。\n\n[OK] = データを送信 (シートを上書き)\n[キャンセル] = データを受信 (ローカルを上書き)')) {
-    // User clicked Cancel -> Pull
-    await pullFromGAS();
-  } else {
-    // User clicked OK -> Push
-    await pushToGAS();
+  if (!confirm('【送信】\n現在のアプリ内データでスプレッドシートを上書きしますか？')) {
+    return;
   }
-}
 
-async function pushToGAS() {
   showToast('送信中...');
   try {
     const data = await dbGetAll();
@@ -484,44 +437,47 @@ async function pushToGAS() {
     };
 
     await fetch(GAS_API_URL, {
-      method: 'POST',
+      method: 'POST', // Always POST for Apps Script execution
       body: JSON.stringify(payload)
     });
 
     showToast('送信完了: シートを更新しました');
   } catch (e) {
     console.error(e);
-    showToast('送信エラー: ' + e.message);
+    showToast('送信失敗: ' + e.message);
   }
 }
 
-async function pullFromGAS() {
-  showToast('受信中...');
+// 2. Pull: Sheet -> App
+async function pullFromGAS(isAuto = false) {
+  if (!GAS_API_URL) return;
+
+  if (!isAuto && !confirm('【受信】\nスプレッドシートのデータを取り込みますか？\n(アプリ内の現在のデータは上書きされます)')) {
+    return;
+  }
+
+  if (!isAuto) showToast('データ受信中...');
+
   try {
-    // GAS fetch needs usually "GET" or POST with action.
-    // Let's use POST for consistency or GET if CORS allows. Simple GET usually redirects in GAS.
-    // Better to use POST for everything with GAS to avoid 302 redirect issues in some clients.
-    const payload = { action: 'pull' };
-    const res = await fetch(GAS_API_URL, {
-      method: 'POST',
-      body: JSON.stringify(payload)
-    });
+    // GET request (Apps Script doGet)
+    const res = await fetch(GAS_API_URL);
+    if (!res.ok) throw new Error('Network Error');
 
-    const jsonData = await res.json();
-    if (!Array.isArray(jsonData)) throw new Error('Invalid data format');
+    const json = await res.json();
+    if (!Array.isArray(json)) throw new Error('Format Error');
 
+    // Success: Replace DB
     await dbClear();
-    for (const item of jsonData) {
-      // Ensure data types
-      item.stock = parseInt(item.stock, 10) || 0;
+    for (const item of json) {
       await dbPut(item);
     }
 
     await loadAndRender();
-    showToast('受信完了: ローカルデータを更新しました');
+    if (!isAuto) showToast(`受信完了: ${json.length}件取り込みました`);
+    else console.log(`Auto-sync success: ${json.length} items`);
   } catch (e) {
     console.error(e);
-    showToast('受信エラー: ' + e.message);
+    if (!isAuto) showToast('受信失敗: ' + e.message);
   }
 }
 
@@ -529,26 +485,17 @@ async function pullFromGAS() {
 function showToast(msg) {
   dom.toast.textContent = msg;
   dom.toast.classList.add('show');
-  setTimeout(() => {
-    dom.toast.classList.remove('show');
-  }, 3000);
+  setTimeout(() => dom.toast.classList.remove('show'), 3000);
 }
 
 function escapeHtml(str) {
-  if (typeof str !== 'string') return '';
-  return str.replace(/[&<>"']/g, function (m) {
-    return {
-      '&': '&amp;',
-      '<': '&lt;',
-      '>': '&gt;',
-      '"': '&quot;',
-      "'": '&#039;'
-    }[m];
-  });
+  if (!str) return '';
+  return str.replace(/[&<>"']/g, m => ({
+    '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#039;'
+  })[m]);
 }
 
 function playBeep() {
-  // Simple beep logic
   const ctx = new (window.AudioContext || window.webkitAudioContext)();
   const osc = ctx.createOscillator();
   osc.type = 'sine';
@@ -561,16 +508,10 @@ function playBeep() {
 function setupServiceWorker() {
   if ('serviceWorker' in navigator) {
     navigator.serviceWorker.register('service-worker.js')
-      .then(reg => console.log('SW Registered', reg))
-      .catch(err => console.log('SW Failed', err));
+      .then(reg => console.log('SW Registered'))
+      .catch(err => console.log('SW Fail', err));
   }
 }
 
-// Start
+// Init
 init();
-
-// Global handles for HTML access
-window.handleDelete = handleDelete;
-window.handleEdit = handleEdit;
-
-
