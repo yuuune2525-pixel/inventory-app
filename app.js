@@ -3,7 +3,7 @@
  */
 
 // --- Configuration ---
-const GAS_API_URL = ''; // Update this!
+const GAS_API_URL = 'https://script.google.com/macros/s/AKfycbxq1k70Ey9HIjHhINKbmQDS8_YLCuBFEOggy_4HEw4MB6pZ_W_PFiqP3B380p25eKu7Ww/exec'; // Update this!
 
 // --- Constants ---
 const DB_NAME = 'StockAppDB';
@@ -427,3 +427,4 @@ function playBeep() { const ctx = new (window.AudioContext || window.webkitAudio
 function setupServiceWorker() { if ('serviceWorker' in navigator) navigator.serviceWorker.register('service-worker.js').then(r => { if (r.waiting) r.waiting.postMessage({ type: 'SKIP_WAITING' }) }); }
 
 init();
+
