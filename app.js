@@ -3,7 +3,7 @@
  */
 
 // Configuration
-const GAS_API_URL = ''; // Update this!
+const GAS_API_URL = 'https://script.google.com/macros/s/AKfycbxVl0ZT_ZrtbWcztQRepNAT4i6e4FLi3h3sMffp6cWtE1B4GgONJnuwYEmiDRgutJ_X4w/exec'; // Update this!
 
 // State
 let db = null;
@@ -437,3 +437,4 @@ const app = {
 };
 
 app.init();
+
