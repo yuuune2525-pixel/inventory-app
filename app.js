@@ -3,7 +3,7 @@
  */
 
 // --- Configuration ---
-const GAS_API_URL = ''; // ここにGASのWebアプリURLを貼り付けてください
+const GAS_API_URL = 'https://script.google.com/macros/s/AKfycbxfShL5d8HW7x3Z8vvvi_w4mQ18JhPuIXMgy22lzqhuRCMeBYZIanijyBrW74Y3VvcCAg/exec'; // ここにGASのWebアプリURLを貼り付けてください
 
 // --- Constants & State ---
 const DB_NAME = 'StockAppDB';
@@ -515,3 +515,4 @@ function setupServiceWorker() {
 
 // Init
 init();
+
