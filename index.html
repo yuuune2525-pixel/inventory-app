@@ -1,0 +1,157 @@
+<!DOCTYPE html>
+<html lang="ja">
+
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+  <title>在庫管理PWA V3.6.3</title>
+  <link rel="stylesheet" href="style.css?v=3.6.3">
+  <link rel="manifest" href="manifest.json">
+  <meta name="theme-color" content="#4F46E5">
+  <script src="https://cdn.jsdelivr.net/npm/@ericblade/quagga2/dist/quagga.min.js"></script>
+</head>
+
+<body>
+
+  <!-- Status Bar -->
+  <div id="status-bar" class="status-bar hidden">
+    <span id="status-text"></span>
+  </div>
+
+  <!-- Mode Selection Screen -->
+  <div id="mode-selector" class="mode-screen">
+    <div class="mode-content">
+      <h2>📦 作業場所を選択</h2>
+      <div class="mode-grid">
+        <button class="mode-card mode-shelf" onclick="app.selectMode('shelf')">
+          <span class="icon">🏠</span>
+          <span class="label">棚上</span>
+        </button>
+        <button class="mode-card mode-kyakuchu" onclick="app.selectMode('kyakuchu')">
+          <span class="icon">🔖</span>
+          <span class="label">客注部屋</span>
+        </button>
+        <button class="mode-card mode-prefab" onclick="app.selectMode('prefab')">
+          <span class="icon">🏭</span>
+          <span class="label">プレハブ</span>
+        </button>
+        <button class="mode-card mode-view" onclick="app.selectMode('view')">
+          <span class="icon">📊</span>
+          <span class="label">全在庫確認</span>
+        </button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Main App -->
+  <div id="app-container" class="hidden">
+    <header id="app-header">
+      <button id="btn-back" class="btn-icon">⬅</button>
+      <h1 id="header-title">在庫管理</h1>
+      <div class="header-actions">
+        <button id="btn-sync-manual" class="btn-icon">🔄</button>
+      </div>
+    </header>
+
+    <main>
+      <!-- Scanner -->
+      <section class="card" id="card-scanner">
+        <div id="scanner-wrapper" class="hidden">
+          <div id="scanner-container" class="scanner-viewport"></div>
+          <div class="scanner-guide"></div>
+        </div>
+        <button id="btn-scan-toggle" class="btn-scan">📷 読取開始</button>
+      </section>
+
+      <!-- Input Form -->
+      <section class="card form-card" id="card-input">
+        <div id="badge-mode" class="mode-badge"></div>
+
+        <div class="form-group">
+          <label>JANコード</label>
+          <input type="tel" id="inp-jan" maxlength="13" placeholder="13桁">
+        </div>
+
+        <div class="form-group">
+          <label>商品名</label>
+          <input type="text" id="inp-name" placeholder="商品名">
+        </div>
+        <div class="form-group">
+          <label>メーカーコード</label>
+          <input type="tel" id="inp-maker" placeholder="数字">
+        </div>
+
+        <!-- Stock Input -->
+        <div class="stock-section highlight-target-update">
+          <label id="lbl-stock-location">在庫数</label>
+          <div class="stock-control">
+            <button class="btn-circle btn-minus" id="btn-minus">−</button>
+            <input type="number" id="inp-stock" value="0" min="0" class="inp-stock-sub">
+            <button class="btn-circle btn-plus" id="btn-plus">＋</button>
+          </div>
+        </div>
+
+        <!-- Explicit Save Button -->
+        <button id="btn-save-confirm" class="btn-save-primary">登録確定 (同期)</button>
+
+        <button id="btn-clear" class="btn-text">クリア</button>
+      </section>
+
+      <!-- List View -->
+      <section>
+        <!-- Filters -->
+        <div class="filters">
+          <input type="search" id="inp-search" placeholder="検索...">
+          <select id="sel-sort">
+            <option value="date-desc">日時 (新しい順)</option>
+            <option value="name-asc">商品名順</option>
+            <option value="stock-asc">在庫 (少ない順)</option>
+          </select>
+        </div>
+
+        <div id="list-container"></div>
+
+        <!-- Pagination -->
+        <div class="pagination">
+          <button id="btn-prev">前へ</button>
+          <span id="page-indicator">1 / 1</span>
+          <button id="btn-next">次へ</button>
+        </div>
+      </section>
+    </main>
+
+    <!-- Edit Dialog -->
+    <div id="edit-dialog" class="mode-screen hidden">
+      <div class="mode-content dialog-content">
+        <h3>在庫編集</h3>
+        <p id="dialog-title"></p>
+        <div class="dialog-grid">
+          <label>棚上 <input type="number" id="dlg-shelf" min="0"></label>
+          <label>客注 <input type="number" id="dlg-kyakuchu" min="0"></label>
+          <label>プレ <input type="number" id="dlg-prefab" min="0"></label>
+        </div>
+        <div class="dialog-actions">
+          <button id="btn-dialog-cancel">キャンセル</button>
+          <button id="btn-dialog-save" class="btn-save-primary">保存</button>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <div id="toast" class="toast"></div>
+
+  <!-- Debug Console -->
+  <div id="debug-console" style="
+    position: fixed; bottom: 0; left: 0; width: 100%; height: 120px; 
+    background: rgba(0,0,0,0.8); color: lime; font-family: monospace; 
+    font-size: 10px; padding: 5px; overflow-y: auto; pointer-events: none;
+    z-index: 9999; display: none;
+  "></div>
+
+  <div style="text-align:center; margin-bottom: 2rem; color:#ccc; font-size:0.8rem;" onclick="app.forceUpdate()">
+    V3.6.3 (Tap to Update / Toggle Debug)
+  </div>
+  <script src="app.js?v=3.6.3"></script>
+</body>
+
+</html>
